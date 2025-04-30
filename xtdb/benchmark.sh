@@ -11,6 +11,12 @@ sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
 
+wget https://jdbc.postgresql.org/download/postgresql-42.7.3.jar
+
+wget https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.deb
+
+sudo apt install ./jdk-21_linux-x64_bin.deb
+
 curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh && \
     chmod +x linux-install.sh && \
     sudo ./linux-install.sh && \

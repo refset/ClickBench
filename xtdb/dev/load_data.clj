@@ -5,7 +5,6 @@
             [xtdb.next.jdbc :as xt-jdbc]
             [clojure.tools.logging :as log]))
 
-;; Database connection details (adjust as needed)
 (def db-spec {:dbtype "xtdb"
               :dbname "xtdb"
               :host "localhost"
@@ -13,59 +12,53 @@
               :password "your-password"})
 
 (defn read-tsv-files [dir]
-  "Reads all TSV files from the given directory. Returns a map of table-name to file-path."
   (->> (file-seq (io/file dir))
        (filter #(.isFile %))
        (filter #(str/ends-with? (.getName %) ".tsv"))
        (reduce (fn [acc file]
                  (let [table-name (-> (.getName file)
                                       (str/replace #"\.tsv$" "")
-                                      (str/replace #"^public_" ""))] ;; Remove public_ prefix
+                                      (str/replace #"^public_" ""))]
                    (assoc acc table-name (.getAbsolutePath file))))
                {})))
 
 (defn parse-value [value]
-  "Attempts to parse a value into a common data type (number, boolean, date, or string)."
   (cond
-    ;; Handle numbers
     (re-matches #"-?\d+(\.\d+)?" value)
     (if (re-find #"\." value)
       (Double/parseDouble value)
       (Long/parseLong value))
 
-    ;; Handle booleans
     (re-matches #"(?i)(t|true|f|false)" value)
     (boolean (or (= "t" (str/lower-case value))
                  (= "true" (str/lower-case value))))
 
-    ;; Handle ISO and common date formats
-    (re-matches #"\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?" value)
+    ;; Exact ISO date (yyyy-MM-dd)
+    (re-matches #"\d{4}-\d{2}-\d{2}" value)
     (try
-      (let [format (if (re-find #" " value)
-                     "yyyy-MM-dd HH:mm:ss"
-                     "yyyy-MM-dd")]
-        (.parse (java.text.SimpleDateFormat. format) value))
-      (catch Exception _ value)) ;; Fallback to string if parsing fails
+      (java.time.LocalDate/parse value)
+      (catch Exception _ value))
 
-    ;; Handle null-like values
+    ;; Timestamp-like string with time component
+    (re-matches #"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}" value)
+    (try
+      (.parse (java.text.SimpleDateFormat. "yyyy-MM-dd HH:mm:ss") value)
+      (catch Exception _ value))
+
     (= "\\N" value) nil
 
-    ;; Default: return the original string
     :else value))
 
 (defn parse-record [record]
-  "Parses the values of a record into common data types."
   (into {} (map (fn [[k v]] [k (parse-value v)]) record)))
 
 (defn is-join-table? [table-name]
-  "Detects if a table is a join table based on its name pattern."
   (let [parts (str/split table-name #"_")]
     (= 2 (count parts))))
-; FIXME, better to check for absence of column matching (str table-name "_id")
 
 (defn generate-record [table-name line column-names]
-  "Converts a TSV line to a map representation for use with RECORDS."
   (let [values (str/split line #"\t")
+        column-names (map str/lower-case column-names)
         raw-record (zipmap column-names values)
         parsed-record (parse-record raw-record)]
     (if-not (= (count values) (count column-names))
@@ -73,14 +66,20 @@
                                                :expected column-names
                                                :actual values})))
     (cond
-      ;; Handle join tables
+      (= table-name "hits")
+      (let [composite-id (str (get parsed-record "counterid") "_"
+                               (get parsed-record "eventdate") "_"
+                               (get parsed-record "userid") "_"
+                               (get parsed-record "eventtime") "_"
+                               (get parsed-record "watchid"))]
+        (assoc parsed-record "_id" composite-id))
+
       (is-join-table? table-name)
       (let [[tbl1 tbl2] (str/split table-name #"_")
             tbl1-id (get parsed-record (str tbl1 "_id"))
             tbl2-id (get parsed-record (str tbl2 "_id"))]
         (assoc parsed-record "_id" (str tbl1-id "_" tbl2-id)))
 
-      ;; Handle regular tables with `tbl_id` as PK
       :else
       (let [tbl-id-key (str table-name "_id")]
         (if-let [tbl-id (get parsed-record tbl-id-key)]
@@ -89,40 +88,56 @@
               (assoc "_id" tbl-id))
           parsed-record)))))
 
+(def hits-header
+  ["WatchID" "JavaEnable" "Title" "GoodEvent" "EventTime" "EventDate" "CounterID" "ClientIP" "RegionID" "UserID"
+   "CounterClass" "OS" "UserAgent" "URL" "Referer" "IsRefresh" "RefererCategoryID" "RefererRegionID" "URLCategoryID"
+   "URLRegionID" "ResolutionWidth" "ResolutionHeight" "ResolutionDepth" "FlashMajor" "FlashMinor" "FlashMinor2"
+   "NetMajor" "NetMinor" "UserAgentMajor" "UserAgentMinor" "CookieEnable" "JavascriptEnable" "IsMobile" "MobilePhone"
+   "MobilePhoneModel" "Params" "IPNetworkID" "TraficSourceID" "SearchEngineID" "SearchPhrase" "AdvEngineID" "IsArtifical"
+   "WindowClientWidth" "WindowClientHeight" "ClientTimeZone" "ClientEventTime" "SilverlightVersion1" "SilverlightVersion2"
+   "SilverlightVersion3" "SilverlightVersion4" "PageCharset" "CodeVersion" "IsLink" "IsDownload" "IsNotBounce" "FUniqID"
+   "OriginalURL" "HID" "IsOldCounter" "IsEvent" "IsParameter" "DontCountHits" "WithHash" "HitColor" "LocalEventTime" "Age"
+   "Sex" "Income" "Interests" "Robotness" "RemoteIP" "WindowName" "OpenerName" "HistoryLength" "BrowserLanguage"
+   "BrowserCountry" "SocialNetwork" "SocialAction" "HTTPError" "SendTiming" "DNSTiming" "ConnectTiming"
+   "ResponseStartTiming" "ResponseEndTiming" "FetchTiming" "SocialSourceNetworkID" "SocialSourcePage" "ParamPrice"
+   "ParamOrderID" "ParamCurrency" "ParamCurrencyID" "OpenstatServiceName" "OpenstatCampaignID" "OpenstatAdID"
+   "OpenstatSourceID" "UTMSource" "UTMMedium" "UTMCampaign" "UTMContent" "UTMTerm" "FromTag" "HasGCLID" "RefererHash"
+   "URLHash" "CLID"])
+
+(def hits-header-lower (mapv str/lower-case hits-header))
+
 (defn insert-tsv-into-db! [conn table-name file-path]
-  "Reads a TSV file, processes its contents in batches, and inserts data into the database using RECORDS."
   (log/info "Processing file for table:" table-name)
   (with-open [reader (io/reader file-path)]
-    (let [header-line (.readLine reader)]
-      (if (nil? header-line)
-        (log/warn "File is empty, skipping table:" table-name)
-        (let [header (vec (str/split header-line #"\t"))
-              batch-size 1000]
-          (loop [batch [] total-count 0]
-            (let [line (.readLine reader)]
-              (if line
-                (let [record (generate-record table-name line header)
-                      batch' (conj batch record)]
-                  (if (< (count batch') batch-size)
-                    ;; Continue accumulating batch
-                    (recur batch' total-count)
-                    ;; Batch full, insert
-                    (do
-                      (jdbc/with-transaction [tx conn]
-                        (with-open [ps (jdbc/prepare tx [(str "INSERT INTO " table-name " RECORDS ?")])]
-                          (jdbc/execute-batch! ps (map vector (map xt-jdbc/->pg-obj batch')))))
-                      (recur [] (+ total-count (count batch'))))))
-                ;; End of file: flush any remaining records
+    (let [maybe-header-line (when-not (= table-name "hits") (.readLine reader))
+          header (if (= table-name "hits")
+                   hits-header-lower
+                   (when maybe-header-line
+                     (vec (map str/lower-case (str/split maybe-header-line #"\t")))))
+          batch-size 1000]
+      (if (nil? header)
+        (log/warn "File is empty or missing header, skipping table:" table-name)
+        (loop [batch [] total-count 0]
+          (if-let [line (.readLine reader)]
+            (let [record (generate-record table-name line header)
+                  batch' (conj batch record)]
+              (if (< (count batch') batch-size)
+                (recur batch' total-count)
                 (do
-                  (when (seq batch)
-                    (jdbc/with-transaction [tx conn]
-                      (with-open [ps (jdbc/prepare tx [(str "INSERT INTO " table-name " RECORDS ?")])]
-                        (jdbc/execute-batch! ps (map vector (map xt-jdbc/->pg-obj batch)))))
-                    (set! total-count (+ total-count (count batch))))
-                  (log/debug "Finished inserting" total-count "records for table:" table-name)))))))))
+                  (jdbc/with-transaction [tx conn]
+                    (with-open [ps (jdbc/prepare tx [(str "INSERT INTO " table-name " RECORDS ?")])]
+                      (jdbc/execute-batch! ps (map vector (map xt-jdbc/->pg-obj batch')))))
+                  (recur [] (+ total-count (count batch'))))))
+            (do
+              (when (seq batch)
+                (jdbc/with-transaction [tx conn]
+                  (with-open [ps (jdbc/prepare tx [(str "INSERT INTO " table-name " RECORDS ?")])]
+                    (jdbc/execute-batch! ps (map vector (map xt-jdbc/->pg-obj batch))))))
+              (let [final-total (+ total-count (count batch))]
+                (log/debug "Finished inserting" final-total "records for table:" table-name)
+                final-total))))))))
 
 (defn process-tsv-files [conn dir]
-  "Reads and inserts all TSV files from the directory into the database."
   (let [tsv-files (read-tsv-files dir)]
     (if (empty? tsv-files)
       (log/warn "No TSV files found in directory:" dir)
@@ -142,3 +157,4 @@
       (log/info "Processing TSV files from directory:" dir)
       (process-tsv-files conn dir)
       (log/info "All TSV files have been processed."))))
+
