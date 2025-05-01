@@ -2,9 +2,9 @@
 
 set -eux
 
-sudo apt install docker.io
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     curl \
+    docker \
     openjdk-11-jdk \
     rlwrap \
     postgresql-client \
@@ -22,8 +22,8 @@ curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linu
     sudo ./linux-install.sh && \
     rm linux-install.sh
 
-# wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
-# gzip -d hits.tsv.gz
+wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+gzip -d hits.tsv.gz
 
 # docker volume rm $(sudo docker volume ls -q)
 
