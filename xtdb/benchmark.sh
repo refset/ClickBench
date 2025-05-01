@@ -25,6 +25,8 @@ curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linu
 # wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
 # gzip -d hits.tsv.gz
 
+# docker volume rm $(sudo docker volume ls -q)
+
 sudo docker run --rm -p 5432:5432 -v data:/var/lib/xtdb --name xtdbcontainer ghcr.io/xtdb/xtdb > /dev/null 2>&1 &
 sleep 30
 

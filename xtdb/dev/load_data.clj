@@ -22,16 +22,32 @@
                    (assoc acc table-name (.getAbsolutePath file))))
                {})))
 
-(defn parse-value [value]
-  (cond
-    (re-matches #"-?\d+(\.\d+)?" value)
-    (if (re-find #"\." value)
-      (Double/parseDouble value)
-      (Long/parseLong value))
+(def numeric-columns
+  #{"watchid" "javaenable" "goodevent" "counterid" "clientip" "regionid" "userid"
+    "counterclass" "os" "useragent" "isrefresh" "referercategoryid" "refererregionid"
+    "urlcategoryid" "urlregionid" "resolutionwidth" "resolutionheight" "resolutiondepth"
+    "flashmajor" "netmajor" "netminor" "useragentmajor" "cookieenable" "javascriptenable"
+    "ismobile" "mobilephone" "ipnetworkid" "traficsourceid" "searchengineid" "advengineid"
+    "isartifical" "windowclientwidth" "windowclientheight" "clienttimezone"
+    "silverlightversion1" "silverlightversion2" "silverlightversion3" "silverlightversion4"
+    "codeversion" "islink" "isdownload" "isnotbounce" "funiqid" "hid" "isoldcounter"
+    "isevent" "isparameter" "dontcounthits" "withhash" "age" "sex" "income" "interests"
+    "robotness" "remoteip" "windowname" "openername" "historylength" "httperror"
+    "sendtiming" "dnstiming" "connecttiming" "responsestarttiming" "responseendtiming"
+    "fetchtiming" "socialsourcenetworkid" "paramprice" "paramcurrencyid" "hasgclid"
+    "refererhash" "urlhash" "clid"})
 
-    (re-matches #"(?i)(t|true|f|false)" value)
-    (boolean (or (= "t" (str/lower-case value))
-                 (= "true" (str/lower-case value))))
+
+(defn parse-value [column-name value]
+  (cond
+    (= "\\N" value) nil
+
+    (contains? numeric-columns column-name)
+    (try
+      (if (re-find #"\." value)
+        (Double/parseDouble value)
+        (Long/parseLong value))
+      (catch Exception _ value))
 
     ;; Exact ISO date (yyyy-MM-dd)
     (re-matches #"\d{4}-\d{2}-\d{2}" value)
@@ -45,12 +61,11 @@
       (.parse (java.text.SimpleDateFormat. "yyyy-MM-dd HH:mm:ss") value)
       (catch Exception _ value))
 
-    (= "\\N" value) nil
-
     :else value))
 
+
 (defn parse-record [record]
-  (into {} (map (fn [[k v]] [k (parse-value v)]) record)))
+  (into {} (map (fn [[k v]] [k (parse-value k v)]) record)))
 
 (defn is-join-table? [table-name]
   (let [parts (str/split table-name #"_")]
