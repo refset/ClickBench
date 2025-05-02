@@ -10,5 +10,5 @@ cat queries.sql | while read -r query; do
     (
         echo '\timing'
         yes "$query" | head -n $TRIES
-    ) | sudo -u postgres psql test -t | grep 'Time'
+    ) | psql -h localhost xtdb -t | grep 'Time'
 done

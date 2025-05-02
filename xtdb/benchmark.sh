@@ -30,7 +30,7 @@ gzip -d hits.tsv.gz
 sudo docker run --rm -p 5432:5432 -v data:/var/lib/xtdb --name xtdbcontainer ghcr.io/xtdb/xtdb > /dev/null 2>&1 &
 sleep 30
 
-# psql -h localhost -U xtdb -t
+# psql -h localhost -U xtdb
 
 time ./load.sh
 
@@ -42,6 +42,8 @@ time ./load.sh
 ./run.sh 2>&1 | tee log.txt
 
 sudo du -bcs /var/lib/docker/volumes/data
+
+# sudo du -bc -d 5 /var/lib/docker/volumes/data/_data/
 
 cat log.txt | grep -oP 'Time: \d+\.\d+ ms' | sed -r -e 's/Time: ([0-9]+\.[0-9]+) ms/\1/' |
     awk '{ if (i % 3 == 0) { printf "[" }; printf $1 / 1000; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
